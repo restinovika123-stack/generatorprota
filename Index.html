@@ -1,0 +1,489 @@
+import React, { useState, useRef } from 'react';
+import { BookOpen, Sparkles, Settings2, Zap, FileText, Download, FileQuestion, Bot } from 'lucide-react';
+
+// --- GEMINI API INTEGRATION ---
+const apiKey = ""; // API Key disuntikkan oleh environment
+
+const generateText = async (prompt, retries = 5) => {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+    const payload = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: { 
+            parts: [{ 
+                text: "Anda adalah sistem backend pembuat dokumen. Output Anda HARUS SELALU BERUPA KODE HTML MURNI yang valid, tanpa markdown (jangan gunakan ```html). Jangan tambahkan teks pengantar atau penutup. Kembalikan HANYA tag HTML."
+            }] 
+        }
+    };
+
+    for (let i = 0; i < retries; i++) {
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const result = await response.json();
+            let text = result.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            // Bersihkan markdown jika AI tetap menambahkannya
+            text = text.replace(/```html\n?/g, '').replace(/```\n?/g, '');
+            return text;
+        } catch (error) {
+            if (i === retries - 1) throw error;
+            await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+        }
+    }
+};
+
+export default function App() {
+    const [formData, setFormData] = useState({
+        sekolah: '',
+        mapel: '',
+        tahun: '',
+        fase: '',
+        jp1: '',
+        jp2: '',
+        tempat: '',
+        kepsek: '',
+        nipKepsek: '',
+        guru: '',
+        nipGuru: '',
+        cp: ''
+    });
+
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [generatedHTML, setGeneratedHTML] = useState('');
+    const [error, setError] = useState('');
+    const previewRef = useRef(null);
+
+    const handleChange = (e) => {
+        setFormData({ ...formData, [e.target.name]: e.target.value });
+    };
+
+    const buildPrompt = () => {
+        return `
+Peran: Bertindaklah sebagai Pakar Pengembang Kurikulum.
+Tugas Anda adalah menyusun dokumen Program Semester (PROSEM) Kurikulum Merdeka yang akurat, logis, dan terstruktur berdasarkan format matriks pemetaan waktu mingguan.
+
+Data Input:
+* Satuan Pendidikan: ${formData.sekolah}
+* Mata Pelajaran: ${formData.mapel}
+* Tahun Pelajaran: ${formData.tahun}
+* Fase / Kelas: ${formData.fase}
+* Total Alokasi Waktu Semester 1: ${formData.jp1} JP
+* Total Alokasi Waktu Semester 2: ${formData.jp2} JP
+* Capaian Pembelajaran Lengkap:
+${formData.cp}
+
+Instruksi Kerja:
+1. Bedah Capaian Pembelajaran menjadi Tujuan Pembelajaran (TP), susun menjadi Alur Tujuan Pembelajaran (ATP).
+2. Kelompokkan ATP ke dalam Bab/Tema.
+3. Distribusikan ke Semester 1 (Juli-Desember) dan Semester 2 (Januari-Juni). Tentukan JP tiap baris.
+4. Petakan pelaksanaan minggu ke berapa ("Mg 1-2", "Mg 3", dll).
+
+INSTRUKSI OUTPUT (SANGAT PENTING):
+Hasilkan KODE HTML MURNI yang merepresentasikan dokumen siap cetak. Gunakan styling inline standar (CSS) untuk margin dan rata text. Jangan gunakan framework CSS.
+
+Struktur HTML yang HARUS dibuat:
+
+<div style="text-align: center; font-family: 'Times New Roman', serif; font-size: 14pt;">
+    <strong>PROGRAM SEMESTER DEEP LEARNING<br>KURIKULUM MERDEKA</strong>
+</div>
+<br>
+<table style="width: 100%; font-family: 'Times New Roman', serif; font-size: 12pt; border: none;" class="no-border">
+    <tr><td style="width: 200px; border: none; padding: 2px;">Mata Pelajaran</td><td style="border: none; padding: 2px;">: ${formData.mapel}</td></tr>
+    <tr><td style="border: none; padding: 2px;">Satuan Pendidikan</td><td style="border: none; padding: 2px;">: ${formData.sekolah}</td></tr>
+    <tr><td style="border: none; padding: 2px;">Tahun Pelajaran</td><td style="border: none; padding: 2px;">: ${formData.tahun}</td></tr>
+    <tr><td style="border: none; padding: 2px;">Fase, Kelas/Semester</td><td style="border: none; padding: 2px;">: ${formData.fase} / I (Ganjil)</td></tr>
+</table>
+<br>
+<p style="font-family: 'Times New Roman', serif; font-size: 12pt; text-align: justify;">
+Pada akhir Fase D, murid memiliki kemampuan sebagai berikut:<br>
+${formData.cp.replace(/\n/g, '<br>')}
+</p>
+<br>
+<div style="text-align: center; font-family: 'Times New Roman', serif; font-size: 12pt; margin-bottom: 10px;"><strong>TABEL PROGRAM SEMESTER 1</strong></div>
+<table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 11pt;" border="1">
+    <thead>
+        <tr>
+            <th style="padding: 5px; text-align: center;">Alur dan Tujuan Pembelajaran</th>
+            <th style="padding: 5px; text-align: center; width: 80px;">Alokasi Waktu (JP)</th>
+            <th style="padding: 5px; text-align: center;">Juli</th>
+            <th style="padding: 5px; text-align: center;">Agustus</th>
+            <th style="padding: 5px; text-align: center;">September</th>
+            <th style="padding: 5px; text-align: center;">Oktober</th>
+            <th style="padding: 5px; text-align: center;">November</th>
+            <th style="padding: 5px; text-align: center;">Desember</th>
+        </tr>
+    </thead>
+    <tbody>
+        (ISI DENGAN BARIS-BARIS BAB TERCETAK TEBAL, DAN BARIS ATP DIBAWAHNYA DENGAN ALOKASI MINGGU MISAL "Mg 1-2")
+        <tr>
+            <td style="padding: 5px; font-weight: bold; text-align: right;">JUMLAH JAM PELAJARAN</td>
+            <td style="padding: 5px; text-align: center; font-weight: bold;">${formData.jp1}</td>
+            <td colspan="6" style="padding: 5px;"></td>
+        </tr>
+    </tbody>
+</table>
+
+<br><br><br>
+
+<div style="text-align: center; font-family: 'Times New Roman', serif; font-size: 14pt;">
+    <strong>PROGRAM SEMESTER DEEP LEARNING<br>KURIKULUM MERDEKA</strong>
+</div>
+<br>
+<table style="width: 100%; font-family: 'Times New Roman', serif; font-size: 12pt; border: none;" class="no-border">
+    <tr><td style="width: 200px; border: none; padding: 2px;">Mata Pelajaran</td><td style="border: none; padding: 2px;">: ${formData.mapel}</td></tr>
+    <tr><td style="border: none; padding: 2px;">Satuan Pendidikan</td><td style="border: none; padding: 2px;">: ${formData.sekolah}</td></tr>
+    <tr><td style="border: none; padding: 2px;">Tahun Pelajaran</td><td style="border: none; padding: 2px;">: ${formData.tahun}</td></tr>
+    <tr><td style="border: none; padding: 2px;">Fase, Kelas/Semester</td><td style="border: none; padding: 2px;">: ${formData.fase} / II (Genap)</td></tr>
+</table>
+<br>
+<p style="font-family: 'Times New Roman', serif; font-size: 12pt; text-align: justify;">
+Pada akhir Fase D, murid memiliki kemampuan sebagai berikut:<br>
+${formData.cp.replace(/\n/g, '<br>')}
+</p>
+<br>
+<div style="text-align: center; font-family: 'Times New Roman', serif; font-size: 12pt; margin-bottom: 10px;"><strong>TABEL PROGRAM SEMESTER 2</strong></div>
+<table style="width: 100%; border-collapse: collapse; font-family: 'Times New Roman', serif; font-size: 11pt;" border="1">
+    <thead>
+        <tr>
+            <th style="padding: 5px; text-align: center;">Alur dan Tujuan Pembelajaran</th>
+            <th style="padding: 5px; text-align: center; width: 80px;">Alokasi Waktu (JP)</th>
+            <th style="padding: 5px; text-align: center;">Januari</th>
+            <th style="padding: 5px; text-align: center;">Februari</th>
+            <th style="padding: 5px; text-align: center;">Maret</th>
+            <th style="padding: 5px; text-align: center;">April</th>
+            <th style="padding: 5px; text-align: center;">Mei</th>
+            <th style="padding: 5px; text-align: center;">Juni</th>
+        </tr>
+    </thead>
+    <tbody>
+        (ISI DENGAN BARIS-BARIS BAB TERCETAK TEBAL, DAN BARIS ATP DIBAWAHNYA DENGAN ALOKASI MINGGU MISAL "Mg 1-2")
+        <tr>
+            <td style="padding: 5px; font-weight: bold; text-align: right;">JUMLAH JAM PELAJARAN</td>
+            <td style="padding: 5px; text-align: center; font-weight: bold;">${formData.jp2}</td>
+            <td colspan="6" style="padding: 5px;"></td>
+        </tr>
+    </tbody>
+</table>
+
+<br><br>
+<table style="width: 100%; border: none; font-family: 'Times New Roman', serif; font-size: 12pt; margin-top: 30px;" class="no-border">
+    <tr>
+        <td style="text-align: center; width: 50%; border: none;">
+            Mengetahui,<br>Kepala Sekolah<br><br><br><br><br>
+            <strong>${formData.kepsek}</strong><br>
+            NIP. ${formData.nipKepsek}
+        </td>
+        <td style="text-align: center; width: 50%; border: none;">
+            ${formData.tempat}, ......................... 20..<br>Guru Mata Pelajaran<br><br><br><br><br>
+            <strong>${formData.guru}</strong><br>
+            NIP. ${formData.nipGuru}
+        </td>
+    </tr>
+</table>
+`;
+    };
+
+    const handleGenerate = async (e) => {
+        e.preventDefault();
+        setIsGenerating(true);
+        setError('');
+        setGeneratedHTML('');
+
+        try {
+            const prompt = buildPrompt();
+            const htmlResponse = await generateText(prompt);
+            setGeneratedHTML(htmlResponse);
+        } catch (err) {
+            setError('Gagal menghasilkan dokumen. Silakan coba beberapa saat lagi.');
+            console.error(err);
+        } finally {
+            setIsGenerating(false);
+        }
+    };
+
+    const downloadWord = () => {
+        if (!generatedHTML) return;
+
+        const header = `
+            <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+                  xmlns:w='urn:schemas-microsoft-com:office:word' 
+                  xmlns='[http://www.w3.org/TR/REC-html40](http://www.w3.org/TR/REC-html40)'>
+            <head>
+                <meta charset='utf-8'>
+                <title>Program Semester</title>
+                <style>
+                    body { font-family: 'Times New Roman', serif; }
+                    table { width: 100%; border-collapse: collapse; margin-bottom: 20pt; }
+                    table, th, td { border: 1pt solid black; }
+                    th, td { padding: 5pt; vertical-align: top; }
+                    .no-border, .no-border th, .no-border td { border: none !important; }
+                </style>
+            </head>
+            <body>
+        `;
+        const footer = "</body></html>";
+        const sourceHTML = header + generatedHTML + footer;
+
+        const blob = new Blob(['\ufeff', sourceHTML], { type: 'application/msword' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        const fileName = `PROSEM_${formData.mapel.replace(/\s+/g, '_')}_${formData.fase.split('/')[0].trim()}.doc`;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    return (
+        <div className="flex flex-col h-screen overflow-hidden bg-gray-50 font-sans">
+            {/* CSS terinjeksi khusus komponen preview area */}
+            <style>{`
+                .preview-content::-webkit-scrollbar { width: 8px; }
+                .preview-content::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+                .preview-content::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+                .preview-content::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+                
+                .doc-preview {
+                    background: white;
+                    padding: 40px;
+                    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+                    color: black;
+                    font-family: 'Times New Roman', Times, serif;
+                    font-size: 12pt;
+                    line-height: 1.5;
+                }
+                .doc-preview table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    margin-bottom: 20px;
+                }
+                .doc-preview table, .doc-preview th, .doc-preview td {
+                    border: 1px solid black;
+                }
+                .doc-preview th, .doc-preview td {
+                    padding: 6px;
+                    text-align: left;
+                    vertical-align: top;
+                }
+                .doc-preview .no-border, .doc-preview .no-border th, .doc-preview .no-border td {
+                    border: none !important;
+                    padding: 4px;
+                }
+            `}</style>
+
+            {/* Header */}
+            <header className="bg-blue-600 text-white shadow-md z-10 shrink-0">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <BookOpen className="h-8 w-8 text-orange-500" />
+                        <div>
+                            <h1 className="text-xl font-bold tracking-tight">PARTNERGURU.AI</h1>
+                            <p className="text-xs text-blue-200">Generator Administrasi Guru</p>
+                        </div>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-2 bg-blue-700 px-3 py-1.5 rounded-full text-sm">
+                        <Sparkles className="h-4 w-4 text-orange-400" />
+                        <span>DIDUKUNG OLEH AI</span>
+                    </div>
+                </div>
+            </header>
+
+            {/* Main Content Workspace */}
+            <main className="flex-1 flex flex-col md:flex-row overflow-hidden bg-gray-100">
+                
+                {/* Left Panel: Form Input */}
+                <div className="w-full md:w-5/12 lg:w-1/3 bg-white border-r border-gray-200 flex flex-col overflow-hidden shadow-lg z-10">
+                    <div className="p-5 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
+                        <Settings2 className="h-5 w-5 text-gray-500" />
+                        <h2 className="text-lg font-semibold text-gray-800">Parameter PROSEM</h2>
+                    </div>
+                    
+                    <div className="p-5 overflow-y-auto flex-1 custom-scrollbar">
+                        <form id="prosemForm" onSubmit={handleGenerate} className="space-y-4">
+                            <div className="grid grid-cols-1 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Satuan Pendidikan</label>
+                                    <input type="text" name="sekolah" value={formData.sekolah} onChange={handleChange} required
+                                        placeholder="Contoh: SMAN 1 Pringsewu"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Mata Pelajaran</label>
+                                    <input type="text" name="mapel" value={formData.mapel} onChange={handleChange} required
+                                        placeholder="Contoh: Matematika"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Tahun Pelajaran</label>
+                                        <input type="text" name="tahun" value={formData.tahun} onChange={handleChange} required
+                                            placeholder="Contoh: 2025/2026"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Fase / Kelas</label>
+                                        <input type="text" name="fase" value={formData.fase} onChange={handleChange} required
+                                            placeholder="Contoh: D / Kelas VII"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Total JP Sem 1</label>
+                                        <input type="number" name="jp1" value={formData.jp1} onChange={handleChange} required
+                                            placeholder="Contoh: 54"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">Total JP Sem 2</label>
+                                        <input type="number" name="jp2" value={formData.jp2} onChange={handleChange} required
+                                            placeholder="Contoh: 54"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                    </div>
+                                </div>
+                                
+                                <div className="border-t border-gray-200 pt-4 mt-2">
+                                    <h3 className="text-sm font-semibold text-gray-600 mb-3">Data Tanda Tangan</h3>
+                                    <div className="grid grid-cols-2 gap-3 mb-3">
+                                            <div className="col-span-2">
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Tempat / Kota</label>
+                                            <input type="text" name="tempat" value={formData.tempat} onChange={handleChange} required
+                                                placeholder="Contoh: Pringsewu"
+                                                className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Nama Kepala Sekolah</label>
+                                            <input type="text" name="kepsek" value={formData.kepsek} onChange={handleChange} required
+                                                placeholder="Contoh: Budi Santoso, M.Pd."
+                                                className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">NIP Kepala Sekolah</label>
+                                            <input type="text" name="nipKepsek" value={formData.nipKepsek} onChange={handleChange} required
+                                                placeholder="Contoh: 19700101 200001 1 001"
+                                                className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">Nama Guru</label>
+                                            <input type="text" name="guru" value={formData.guru} onChange={handleChange} required
+                                                placeholder="Contoh: Resti Novika, M.Pd."
+                                                className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-500 mb-1">NIP Guru</label>
+                                            <input type="text" name="nipGuru" value={formData.nipGuru} onChange={handleChange} required
+                                                placeholder="Contoh: 19800202 201001 2 002"
+                                                className="w-full px-3 py-1.5 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm outline-none placeholder-gray-400" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-gray-200 pt-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Capaian Pembelajaran (CP)
+                                        <span className="text-xs text-gray-400 font-normal ml-2">(Bisa disalin dari Dokumen CP)</span>
+                                    </label>
+                                    <textarea name="cp" value={formData.cp} onChange={handleChange} required rows="6"
+                                        placeholder="Contoh: Bilangan: Membaca, menulis, dan membandingkan bilangan bulat, rasional, desimal, berpangkat... Aljabar: Pola bilangan, bentuk aljabar..."
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-600 focus:border-blue-600 text-sm text-gray-700 outline-none placeholder-gray-400"></textarea>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                    
+                    <div className="p-5 border-t border-gray-200 bg-white shrink-0">
+                        <button 
+                            type="submit" 
+                            form="prosemForm"
+                            disabled={isGenerating}
+                            className="w-full flex items-center justify-center gap-2 bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-4 rounded-lg shadow-md transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                        >
+                            {isGenerating ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-white" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Menyusun Dokumen...
+                                </>
+                            ) : (
+                                <>
+                                    <Zap className="h-5 w-5" />
+                                    Generate PROSEM
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+
+                {/* Right Panel: Result & Preview */}
+                <div className="w-full md:w-7/12 lg:w-2/3 flex flex-col bg-gray-200 relative">
+                    {/* Toolbar Action */}
+                    <div className="bg-white px-6 py-3 border-b border-gray-300 flex justify-between items-center shrink-0 shadow-sm z-10">
+                        <div className="flex items-center gap-2">
+                            <FileText className="h-5 w-5 text-gray-500" />
+                            <span className="font-medium text-gray-700">Preview Dokumen</span>
+                        </div>
+                        <button 
+                            onClick={downloadWord}
+                            disabled={!generatedHTML || isGenerating}
+                            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        >
+                            <Download className="h-4 w-4" />
+                            Download Word (.doc)
+                        </button>
+                    </div>
+
+                    {/* Canvas Preview Area */}
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-8 preview-content flex justify-center items-start">
+                        
+                        {error && (
+                            <div className="w-full max-w-2xl bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded mb-4" role="alert">
+                                <p className="font-bold">Error</p>
+                                <p>{error}</p>
+                            </div>
+                        )}
+
+                        {!generatedHTML && !isGenerating && !error && (
+                            <div className="flex flex-col items-center justify-center h-full text-gray-400 mt-20">
+                                <FileQuestion className="h-20 w-20 mb-4 opacity-50" />
+                                <p className="text-lg">Dokumen belum di-generate.</p>
+                                <p className="text-sm">Isi parameter di samping lalu klik Generate.</p>
+                            </div>
+                        )}
+
+                        {isGenerating && (
+                            <div className="flex flex-col items-center justify-center h-full text-blue-600 mt-20">
+                                <Bot className="h-20 w-20 mb-4 animate-bounce" />
+                                <p className="text-lg font-medium text-gray-600">AI sedang memetakan Alur Tujuan Pembelajaran...</p>
+                                <p className="text-sm text-gray-400 mt-2">Ini membutuhkan waktu sekitar 10-15 detik.</p>
+                            </div>
+                        )}
+
+                        {generatedHTML && !isGenerating && (
+                            <div 
+                                ref={previewRef}
+                                className="doc-preview w-full max-w-4xl"
+                                dangerouslySetInnerHTML={{ __html: generatedHTML }}
+                            />
+                        )}
+                    </div>
+                </div>
+            </main>
+
+            {/* Footer */}
+            <footer className="bg-white border-t border-gray-200 py-2.5 text-center shrink-0 z-20 shadow-[0_-2px_4px_rgba(0,0,0,0.02)]">
+                <p className="text-sm text-gray-500 font-medium">
+                    &copy; 2026 AI Generator Administrasi Guru. Dibuat oleh Resti Novika, M.Pd. Tiktok : KelasResti.
+                </p>
+            </footer>
+        </div>
+    );
+}
